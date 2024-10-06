@@ -1,0 +1,7 @@
+venv
+database
+*.pyc
+*.pyo
+\end{code}
+\end{itemize}
+.vscode
