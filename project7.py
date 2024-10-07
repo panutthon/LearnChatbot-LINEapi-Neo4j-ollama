@@ -1,5 +1,5 @@
 from flask import Flask, request
-from linebot import LineBotApi, WebhookHandler
+from linebot import LineBotApi
 from linebot.models import FlexSendMessage, TextSendMessage, QuickReply, QuickReplyButton, MessageAction
 import requests
 from bs4 import BeautifulSoup
@@ -29,7 +29,7 @@ def scrape_converse(url):
             'name': name.text.strip() if name else 'No title found',
             'price': price.text.strip() if price else 'No price found',
             'image_url': image_url,
-            'product_url': product_url  # Include the product URL
+            'product_url': product_url
         })
     return products_details
 
@@ -92,7 +92,53 @@ def send_flex_message(reply_token, products):
         messages=[flex_message]
     )
 
-# Function to handle first Quick Reply for all styles and categories
+# Function to handle Quick Reply for gender selection (for All Style)
+def ask_gender_all_style(reply_token):
+    quick_reply = QuickReply(items=[
+        QuickReplyButton(action=MessageAction(label="Men", text="Men for all style")),
+        QuickReplyButton(action=MessageAction(label="Women", text="Women for all style")),
+        QuickReplyButton(action=MessageAction(label="Unisex", text="Unisex for all style")),
+    ])
+
+    line_bot_api.reply_message(
+        reply_token,
+        TextSendMessage(text="Please choose gender:", quick_reply=quick_reply)
+    )
+
+# Function to handle Quick Reply for gender selection (for Best Sellers, New Arrival, Exclusives)
+def ask_gender(reply_token, category):
+    if category == "new arrival":
+        quick_reply = QuickReply(items=[
+            QuickReplyButton(action=MessageAction(label="Women", text="Women")),
+            QuickReplyButton(action=MessageAction(label="Unisex", text="Unisex")),
+        ])
+    else:
+        quick_reply = QuickReply(items=[
+            QuickReplyButton(action=MessageAction(label="Men", text="Men")),
+            QuickReplyButton(action=MessageAction(label="Women", text="Women")),
+            QuickReplyButton(action=MessageAction(label="Unisex", text="Unisex")),
+        ])
+
+    line_bot_api.reply_message(
+        reply_token,
+        TextSendMessage(text="Please choose gender:", quick_reply=quick_reply)
+    )
+
+# Function to handle style selection under ALL Style
+def ask_style(reply_token):
+    quick_reply = QuickReply(items=[
+        QuickReplyButton(action=MessageAction(label="Chuck 70", text="chuck 70")),
+        QuickReplyButton(action=MessageAction(label="Classic Chuck", text="classic chuck")),
+        QuickReplyButton(action=MessageAction(label="Sport", text="sport")),
+        QuickReplyButton(action=MessageAction(label="Elevation", text="elevation")),
+    ])
+
+    line_bot_api.reply_message(
+        reply_token,
+        TextSendMessage(text="Please choose a style:", quick_reply=quick_reply)
+    )
+
+# Function to handle the first Quick Reply for categories
 def ask_category(reply_token):
     quick_reply = QuickReply(items=[
         QuickReplyButton(action=MessageAction(label="ALL Style", text="all style")),
@@ -106,33 +152,6 @@ def ask_category(reply_token):
         TextSendMessage(text="Please choose a category:", quick_reply=quick_reply)
     )
 
-# Function to handle second level Quick Reply for gender selection
-def ask_gender(reply_token):
-    quick_reply = QuickReply(items=[
-        QuickReplyButton(action=MessageAction(label="Men", text="Men")),
-        QuickReplyButton(action=MessageAction(label="Women", text="Women")),
-        QuickReplyButton(action=MessageAction(label="Unisex", text="Unisex")),
-    ])
-
-    line_bot_api.reply_message(
-        reply_token,
-        TextSendMessage(text="Please choose gender:", quick_reply=quick_reply)
-    )
-
-# Function to handle the second Quick Reply for all style choices
-def ask_all_style(reply_token):
-    quick_reply = QuickReply(items=[
-        QuickReplyButton(action=MessageAction(label="Chuck 70", text="chuck 70")),
-        QuickReplyButton(action=MessageAction(label="Classic Chuck", text="classic chuck")),
-        QuickReplyButton(action=MessageAction(label="Sport", text="sport")),
-        QuickReplyButton(action=MessageAction(label="Elevation", text="elevation")),
-    ])
-
-    line_bot_api.reply_message(
-        reply_token,
-        TextSendMessage(text="Please choose a style:", quick_reply=quick_reply)
-    )
-
 @app.route("/", methods=['POST'])
 def linebot():
     body = request.get_data(as_text=True)
@@ -141,8 +160,11 @@ def linebot():
         reply_token = json_data['events'][0]['replyToken']
         msg = json_data['events'][0]['message']['text'].lower()
 
-        # Mapping URLs to product categories
-        url_map = {
+        # Global variable to store the final URL for scraping
+        global final_url
+
+        # URL map for styles in ALL Style
+        style_url_map = {
             "chuck 70": "https://www.converse.co.th/chuck-70.html",
             "classic chuck": "https://www.converse.co.th/classic-chuck.html",
             "sport": "https://www.converse.co.th/sport.html",
@@ -151,38 +173,47 @@ def linebot():
 
         # Handle first category selection
         if msg == "all style":
-            ask_all_style(reply_token)  # Ask user to select style under ALL Style
+            ask_style(reply_token)  # Ask user to select style under ALL Style
 
-        # Handle best sellers, new arrival, and exclusives
-        elif msg == "best sellers":
-            final_url = "https://www.converse.co.th/men/trending.html?cat=13"
-            ask_gender(reply_token)  # Ask user to select gender
-        elif msg == "new arrival":
-            final_url = "https://www.converse.co.th/men/trending.html?cat=14"
-            ask_gender(reply_token)  # Ask user to select gender
-        elif msg == "exclusives":
-            final_url = "https://www.converse.co.th/men/trending.html?cat=15"
-            ask_gender(reply_token)  # Ask user to select gender
+        # Handle style selection in ALL Style
+        elif msg in style_url_map:
+            final_url = style_url_map[msg]
+            ask_gender_all_style(reply_token)  # Ask user to select gender for All Style
 
-        # Store the selected category in a variable (or use session if needed)
-        elif msg in url_map:
-            # Store the category URL temporarily and ask for gender
-            global category_url
-            category_url = url_map[msg]
-            ask_gender(reply_token)  # Ask the user to select gender
-
-        # If user selects gender, use the previously stored category URL to form the final URL
-        elif msg in ["men", "women", "unisex"]:
+        # Handle gender selection for ALL Style
+        elif msg in ["men for all style", "women for all style", "unisex for all style"]:
             gender_map = {
-                "men": "?gender=62",
-                "women": "?gender=61",
-                "unisex": "?gender=63"
+                "men for all style": "?gender=62",
+                "women for all style": "?gender=61",
+                "unisex for all style": "?gender=63"
             }
 
-            # Build the final URL based on the category and selected gender
-            final_url = f"{category_url}{gender_map[msg]}"
+            final_url = f"{final_url}{gender_map[msg]}"
             products = scrape_converse(final_url)
-            send_flex_message(reply_token, products)  # Send the scraped products to the user
+            send_flex_message(reply_token, products)
+
+        # Handle Best Sellers, New Arrival, Exclusives
+        elif msg == "best sellers":
+            final_url = "https://www.converse.co.th/men/trending.html?cat=13"
+            ask_gender(reply_token, "best sellers")
+        elif msg == "new arrival":
+            final_url = "https://www.converse.co.th/men/trending.html?cat=14"
+            ask_gender(reply_token, "new arrival")
+        elif msg == "exclusives":
+            final_url = "https://www.converse.co.th/men/trending.html?cat=15"
+            ask_gender(reply_token, "exclusives")
+
+        # Handle gender selection for Best Sellers, New Arrival, Exclusives
+        elif msg in ["men", "women", "unisex"]:
+            gender_map = {
+                "men": "&gender=62",
+                "women": "&gender=61",
+                "unisex": "&gender=63"
+            }
+
+            final_url = f"{final_url}{gender_map[msg]}"
+            products = scrape_converse(final_url)
+            send_flex_message(reply_token, products)
 
     except Exception as e:
         print(f"Error processing the LINE event: {e}")
