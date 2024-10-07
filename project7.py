@@ -4,13 +4,66 @@ from linebot.models import FlexSendMessage, TextSendMessage, QuickReply, QuickRe
 import requests
 from bs4 import BeautifulSoup
 import json
+from datetime import datetime
+from neo4j import GraphDatabase
 
 app = Flask(__name__)
 
 # Initialize LineBotApi with your channel access token
 line_bot_api = LineBotApi('rvVY90zi7+UL80fU6aQbDj+itnTfPGf+UXv5JyOLAgjxX6xpTzwGNkRAU8b901gGXLop3vOBCfXotyEvhxyYCqAOcuMWOh1x1gCuMDQSHJhiQDpZB1lp4CYIDVN/3hJLuBGMBgkMw7s+qDbONAqySAdB04t89/1O/w1cDnyilFU=')
 
-# Function to perform web scraping
+# Connect to Neo4j
+URI = "neo4j://localhost:7687"
+AUTH = ("neo4j", "password")
+driver = GraphDatabase.driver(URI, auth=AUTH)
+
+# Function to run Neo4j queries
+def run_query(query, parameters):
+    with driver.session() as session:
+        result = session.run(query, parameters)
+        return [record for record in result]
+
+# Function to store chat history and keyword
+def store_chat_history_and_keyword(user_id, user_message, bot_response, last_keyword, scraped_text=None):
+    timestamp = datetime.now().isoformat()  # Create timestamp
+    query = '''
+    MERGE (u:User {user_id: $user_id})
+    SET u.last_keyword = $last_keyword
+    CREATE (m:Chat {user_message: $user_message, timestamp: $timestamp})
+    CREATE (c:bot_response {bot_response: $bot_response, scraped_text: $scraped_text, timestamp: $timestamp})
+    MERGE (u)-[:question]->(m)-[:answer]->(c)
+    '''
+    parameters = {
+        'user_id': user_id,
+        'user_message': user_message,
+        'bot_response': bot_response,
+        'scraped_text': scraped_text,
+        'last_keyword': last_keyword,
+        'timestamp': timestamp
+    }
+    run_query(query, parameters)
+
+# Function to get the last keyword
+def get_last_keyword(user_id):
+    query = '''
+    MATCH (u:User {user_id: $user_id})
+    RETURN u.last_keyword AS last_keyword
+    '''
+    parameters = {'user_id': user_id}
+    result = run_query(query, parameters)
+    
+    if result and result[0]['last_keyword']:
+        return result[0]['last_keyword']
+    return None
+
+# Function to compute bot response
+def compute_response(user_message):
+    # This is a simple placeholder. You can modify this to make the response smarter.
+    if "hello" in user_message.lower():
+        return "Hi! How can I assist you today?"
+    return "I'm here to help. What do you need?"
+
+# Function to handle scraping from converse website
 def scrape_converse(url):
     response = requests.get(url)
     soup = BeautifulSoup(response.text, 'html.parser')
@@ -158,8 +211,15 @@ def linebot():
     try:
         json_data = json.loads(body)
         reply_token = json_data['events'][0]['replyToken']
-        msg = json_data['events'][0]['message']['text'].lower()
+        user_id = json_data['events'][0]['source']['userId']
+        user_message = json_data['events'][0]['message']['text'].lower()
 
+        # Compute bot response based on user message
+        bot_response = compute_response(user_message)
+        
+        # Get the last keyword the user used
+        last_keyword = get_last_keyword(user_id)
+        
         # Global variable to store the final URL for scraping
         global final_url
 
@@ -172,48 +232,51 @@ def linebot():
         }
 
         # Handle first category selection
-        if msg == "all style":
+        if user_message == "all style":
             ask_style(reply_token)  # Ask user to select style under ALL Style
 
         # Handle style selection in ALL Style
-        elif msg in style_url_map:
-            final_url = style_url_map[msg]
+        elif user_message in style_url_map:
+            final_url = style_url_map[user_message]
             ask_gender_all_style(reply_token)  # Ask user to select gender for All Style
 
         # Handle gender selection for ALL Style
-        elif msg in ["men for all style", "women for all style", "unisex for all style"]:
+        elif user_message in ["men for all style", "women for all style", "unisex for all style"]:
             gender_map = {
                 "men for all style": "?gender=62",
                 "women for all style": "?gender=61",
                 "unisex for all style": "?gender=63"
             }
 
-            final_url = f"{final_url}{gender_map[msg]}"
+            final_url = f"{final_url}{gender_map[user_message]}"
             products = scrape_converse(final_url)
             send_flex_message(reply_token, products)
 
         # Handle Best Sellers, New Arrival, Exclusives
-        elif msg == "best sellers":
+        elif user_message == "best sellers":
             final_url = "https://www.converse.co.th/men/trending.html?cat=13"
             ask_gender(reply_token, "best sellers")
-        elif msg == "new arrival":
+        elif user_message == "new arrival":
             final_url = "https://www.converse.co.th/men/trending.html?cat=14"
             ask_gender(reply_token, "new arrival")
-        elif msg == "exclusives":
+        elif user_message == "exclusives":
             final_url = "https://www.converse.co.th/men/trending.html?cat=15"
             ask_gender(reply_token, "exclusives")
 
         # Handle gender selection for Best Sellers, New Arrival, Exclusives
-        elif msg in ["men", "women", "unisex"]:
+        elif user_message in ["men", "women", "unisex"]:
             gender_map = {
                 "men": "&gender=62",
                 "women": "&gender=61",
                 "unisex": "&gender=63"
             }
 
-            final_url = f"{final_url}{gender_map[msg]}"
+            final_url = f"{final_url}{gender_map[user_message]}"
             products = scrape_converse(final_url)
             send_flex_message(reply_token, products)
+
+        # Store chat history and last keyword
+        store_chat_history_and_keyword(user_id, user_message, bot_response, last_keyword)
 
     except Exception as e:
         print(f"Error processing the LINE event: {e}")
