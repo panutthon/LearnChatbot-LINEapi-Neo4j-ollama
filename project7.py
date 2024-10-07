@@ -155,36 +155,32 @@ def linebot():
 
         # Handle best sellers, new arrival, and exclusives
         elif msg == "best sellers":
-            global category_url
-            category_url = "https://www.converse.co.th/men/trending.html?cat=13"
+            final_url = "https://www.converse.co.th/men/trending.html?cat=13"
             ask_gender(reply_token)  # Ask user to select gender
         elif msg == "new arrival":
-            global category_url
-            category_url = "https://www.converse.co.th/men/trending.html?cat=14"
+            final_url = "https://www.converse.co.th/men/trending.html?cat=14"
             ask_gender(reply_token)  # Ask user to select gender
         elif msg == "exclusives":
-            global category_url
-            category_url = "https://www.converse.co.th/men/trending.html?cat=15"
+            final_url = "https://www.converse.co.th/men/trending.html?cat=15"
             ask_gender(reply_token)  # Ask user to select gender
 
-        # Handle specific styles under ALL Style (Chuck 70, Classic Chuck, etc.)
+        # Store the selected category in a variable (or use session if needed)
         elif msg in url_map:
+            # Store the category URL temporarily and ask for gender
             global category_url
-            category_url = url_map[msg]  # Store the category URL temporarily
-            ask_gender(reply_token)  # Ask user to select gender
+            category_url = url_map[msg]
+            ask_gender(reply_token)  # Ask the user to select gender
 
-        # Handle gender selection and complete the URL
+        # If user selects gender, use the previously stored category URL to form the final URL
         elif msg in ["men", "women", "unisex"]:
-            global category_url
             gender_map = {
-                "men": "&gender=62",
-                "women": "&gender=61",
-                "unisex": "&gender=63"
+                "men": "?gender=62",
+                "women": "?gender=61",
+                "unisex": "?gender=63"
             }
 
             # Build the final URL based on the category and selected gender
             final_url = f"{category_url}{gender_map[msg]}"
-            print(f"Final URL: {final_url}")  # Debugging print for URL checking
             products = scrape_converse(final_url)
             send_flex_message(reply_token, products)  # Send the scraped products to the user
 
