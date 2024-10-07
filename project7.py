@@ -17,6 +17,7 @@ URI = "neo4j://localhost:7687"
 AUTH = ("neo4j", "password")
 driver = GraphDatabase.driver(URI, auth=AUTH)
 
+text_message = ""
 # Function to run Neo4j queries
 def run_query(query, parameters):
     with driver.session() as session:
@@ -64,6 +65,28 @@ def compute_response(user_message):
     return "I'm here to help. What do you need?"
 
 # Function to handle scraping from converse website
+def llama_change(text_message):
+    OLLAMA_API_URL = "http://localhost:11434/api/generate"
+    headers = {
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "model": "supachai/llama-3-typhoon-v1.5",  
+        "prompt": f"return word that means this is  your shoe searching",       
+        "stream": False
+    }
+    
+    try:
+        response = requests.post(OLLAMA_API_URL, headers=headers, data=json.dumps(payload))
+        if response.status_code == 200:
+            response_data = response.json()
+            return response_data["response"]
+        else:
+            return "ขอโทษครับ ไม่สามารถประมวลผลได้ในขณะนี้"
+    except Exception as e:
+        return f"เกิดข้อผิดพลาด: {e}"
+    
+
 def scrape_converse(url):
     response = requests.get(url)
     soup = BeautifulSoup(response.text, 'html.parser')
@@ -140,10 +163,17 @@ def send_flex_message(reply_token, products):
         contents=contents
     )
 
+    # Use llama_change function to modify the text message if needed
+    modified_text = llama_change("Here are the products based on your search:")
+    text_message = TextSendMessage(text=modified_text)
+
+    # Send both text message and Flex message together
     line_bot_api.reply_message(
         reply_token,
-        messages=[flex_message]
+        messages=[text_message, flex_message]
     )
+
+    
 
 # Function to handle Quick Reply for gender selection (for All Style)
 def ask_gender_all_style(reply_token):
@@ -205,6 +235,8 @@ def ask_category(reply_token):
         TextSendMessage(text="Please choose a category:", quick_reply=quick_reply)
     )
 
+    
+
 @app.route("/", methods=['POST'])
 def linebot():
     body = request.get_data(as_text=True)
@@ -221,7 +253,7 @@ def linebot():
         last_keyword = get_last_keyword(user_id)
         
         # Global variable to store the final URL for scraping
-        global final_url
+        global final_url, text_message
 
         # URL map for styles in ALL Style
         style_url_map = {
