@@ -341,7 +341,6 @@ def linebot():
             }
 
             final_url = f"{final_url}{gender_map[user_message]}"
-            print(final_url)
             products = scrape_converse(final_url)
             send_flex_message(reply_token, products)
 
@@ -365,7 +364,6 @@ def linebot():
             }
 
             final_url = f"{final_url}{gender_map[user_message]}"
-            print(final_url)
             products = scrape_converse(final_url)
             send_flex_message(reply_token, products)
 
